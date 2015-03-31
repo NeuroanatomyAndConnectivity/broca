@@ -11,4 +11,7 @@ fprintf('Subject # %u\n',i)
 
 end
 
-save('BrocaDataAparc.m', '-v7.3', 'Data');
+labels = Data(32493,:);
+features = Data(1:32492,:);
+
+save('BrocaDataAparc_new.mat', '-v7.3', 'labels', 'features');
