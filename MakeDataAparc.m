@@ -1,3 +1,7 @@
+%prepares HCP data for Broca classifier:
+%extracts connectivity data from freesurfer opercularis + triangularis aparc labels
+%splits into three clusters: 1=BA45, 2=BA44, 0=neither
+
 function[data] = MakeDataAparc(subject)
 
 subject = num2str(subject);
