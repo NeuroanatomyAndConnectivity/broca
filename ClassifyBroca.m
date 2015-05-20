@@ -38,9 +38,33 @@ mask = mask';
 label45 = eval(tree45,M(:,find(mask)));
 label45 = str2double(label45);
 label45 = label45';
-% apply anatomical constraint
+
+% apply anatomical constraint according to distance from tri
 results45 = label45;
 results45(distTri>20)=0;
+% apply spatial constraint according to neighbors
+label = results45;
+surf.nbr(surf.nbr==0)=1;
+results = zeros(size(label));
+for i = 1:length(surf.nbr)
+    col = surf.nbr(:,i);
+    col2 = label(col);
+    sumcol = col2(1,1) + col2(1,2) + col2(1,3) + col2(1,4) + col2(1,5) + col2(1,6);
+    if sumcol>3
+        results(:,i)=1;
+    end
+end
+results2 = zeros(size(label));
+for i = 1:length(surf.nbr)
+    col = surf.nbr(:,i);
+    col2 = results(col);
+    sumcol = col2(1,1) + col2(1,2) + col2(1,3) + col2(1,4) + col2(1,5) + col2(1,6);
+    if sumcol>3
+        results2(:,i)=1;
+    end
+end
+results45 = results2;
+
 % save results
 filename = ['/scr/murg2/MachineLearning/' subject '_results_BA45_constrained.1D'];
 fid = fopen(filename,'w');
@@ -53,9 +77,33 @@ mask = mask';
 label44 = eval(tree44,M(:,find(mask)));
 label44 = str2double(label44);
 label44 = label44';
-% apply anatomical constraint
+% apply anatomical constraint according to distance from op
 results44 = label44;
 results44(distOp>10)=0;
+
+% apply spatial constraint according to neighbors
+label = results44;
+surf.nbr(surf.nbr==0)=1;
+results = zeros(size(label));
+for i = 1:length(surf.nbr)
+    col = surf.nbr(:,i);
+    col2 = label(col);
+    sumcol = col2(1,1) + col2(1,2) + col2(1,3) + col2(1,4) + col2(1,5) + col2(1,6);
+    if sumcol>3
+        results(:,i)=1;
+    end
+end
+results2 = zeros(size(label));
+for i = 1:length(surf.nbr)
+    col = surf.nbr(:,i);
+    col2 = results(col);
+    sumcol = col2(1,1) + col2(1,2) + col2(1,3) + col2(1,4) + col2(1,5) + col2(1,6);
+    if sumcol>3
+        results2(:,i)=1;
+    end
+end
+results44 = results2;
+
 % save results
 filename = ['/scr/murg2/MachineLearning/' subject '_results_BA44_constrained.1D'];
 fid = fopen(filename,'w');
