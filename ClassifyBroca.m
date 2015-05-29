@@ -1,14 +1,14 @@
-function[] = ClassifyBroca(subject)
+function[cost] = ClassifyBroca(subject)
 
 subject = num2str(subject);
 
-% get decision trees
-tree45 = matfile('/scr/murg2/MachineLearning/DecisionTree_BA45.mat');
-tree45 = tree45.tree_pruned;
-tree44 = matfile('/scr/murg2/MachineLearning/DecisionTree_BA44.mat');
-tree44 = tree44.tree_pruned;
+%% Classify new dataset using decision tree
 
-% get connectivity from new dataset
+% get decision trees
+tree = matfile('/scr/murg2/MachineLearning/DecisionTree4445_AvgConnFeat_unpruned.mat');
+tree = tree.tree;
+
+% get new dataset
 fid = fopen(['/scr/murg2/HCP500_glyphsets/' subject '/rfMRI_REST_left_corr_avg.gii.data'], 'r');
 M = fread(fid,[32492 32492], 'float32');
 
@@ -27,94 +27,112 @@ tri = double(tri);
 surf = SurfStatReadSurf1(['/scr/murg2/HCP500_glyphsets/' subject '/lh.midthickness']);
 surf = surfGetNeighbors(surf);
 
-% calculate geodesic distance from pars opercularis
+% calculate geodesic distances
 distOp = surfGeoDist_parcellation(surf, op);
-% calculate geodesic distance from pars triangularis
 distTri = surfGeoDist_parcellation(surf, tri);
 
-% predict BA 45
-mask = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_maps/meanconn_thres_contrast45-44.1D']);
+mask44 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_maps/meanconn_thres_contrast44-45.1D']);
+mask45 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_maps/meanconn_thres_contrast45-44.1D']);
+mask = mask44 + mask45;
 mask = mask';
-label45 = eval(tree45,M(:,find(mask)));
-label45 = str2double(label45);
-label45 = label45';
+mask(isnan(mask))=0;
+sel_feat = find(mask);
+data_new = [distOp; distTri; M(sel_feat,:)];
+data_new = data_new';
 
-% apply anatomical constraint according to distance from tri
-results45 = label45;
-results45(distTri>20)=0;
-% apply spatial constraint according to neighbors
-label = results45;
+label = eval(tree, data_new);
+cost = test(tree, 'test', data_new, label);
+
+label = str2double(label);
+label = label';
+
+%% apply anatomical constraint according to distance from op and tri
+
+optri = op + tri;
+distOpTri = surfGeoDist_parcellation(surf, optri);
+label(distOpTri>35)=0;
+
+%% apply spatial constraint according to neighbors
+
 surf.nbr(surf.nbr==0)=1;
-results = zeros(size(label));
-for i = 1:length(surf.nbr)
-    col = surf.nbr(:,i);
-    col2 = label(col);
-    sumcol = col2(1,1) + col2(1,2) + col2(1,3) + col2(1,4) + col2(1,5) + col2(1,6);
-    if sumcol>3
-        results(:,i)=1;
-    end
-end
-results2 = zeros(size(label));
+results = label;
 for i = 1:length(surf.nbr)
     col = surf.nbr(:,i);
     col2 = results(col);
-    sumcol = col2(1,1) + col2(1,2) + col2(1,3) + col2(1,4) + col2(1,5) + col2(1,6);
-    if sumcol>3
-        results2(:,i)=1;
+    sumcol0 = sum(col2(:) == 0);
+    sumcol1 = sum(col2(:) == 1);
+    sumcol2 = sum(col2(:) == 2);
+    if sumcol1>3
+    results(:,i)=1;
+    elseif sumcol2>3
+    results(:,i)=2;
+    end
+    if sumcol0>4
+    results(:,i)=0;
     end
 end
-results45 = results2;
 
-% save results
-filename = ['/scr/murg2/MachineLearning/' subject '_results_BA45_constrained.1D'];
-fid = fopen(filename,'w');
-fprintf(fid, '%u\n', results45);
-fclose(fid);
+%% apply spatial constraint using cluster size
 
-% predict BA 44
-mask = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_maps/meanconn_thres_contrast44-45.1D']);
-mask = mask';
-label44 = eval(tree44,M(:,find(mask)));
-label44 = str2double(label44);
-label44 = label44';
-% apply anatomical constraint according to distance from op
-results44 = label44;
-results44(distOp>10)=0;
-
-% apply spatial constraint according to neighbors
-label = results44;
-surf.nbr(surf.nbr==0)=1;
-results = zeros(size(label));
-for i = 1:length(surf.nbr)
-    col = surf.nbr(:,i);
-    col2 = label(col);
-    sumcol = col2(1,1) + col2(1,2) + col2(1,3) + col2(1,4) + col2(1,5) + col2(1,6);
-    if sumcol>3
-        results(:,i)=1;
+% create edge list for BA45
+label45 = results;
+label45(label45==2) = 0;
+edgelist45 = [];
+for i = 1:length(label45)
+    nbrs = surf.nbr(:,i);
+    nbrslabel = label45(nbrs);
+    for j = 1:length(nbrs)
+        if label45(i)~=0 && label45(i) == nbrslabel(j)
+            edge = [i nbrs(j)];
+            edgelist45 = vertcat(edgelist45, edge);
+        else
+            edgelist45 = edgelist45;
+        end
     end
 end
-results2 = zeros(size(label));
-for i = 1:length(surf.nbr)
-    col = surf.nbr(:,i);
-    col2 = results(col);
-    sumcol = col2(1,1) + col2(1,2) + col2(1,3) + col2(1,4) + col2(1,5) + col2(1,6);
-    if sumcol>3
-        results2(:,i)=1;
+
+% build adjacency matrix from edge list for BA45
+A45 = sparse([edgelist45(:,1),edgelist45(:,2)],[edgelist45(:,2),edgelist45(:,1)],1);
+
+% get network components for BA45
+[nComponents45,sizes45,members45] = networkComponents(A45);
+% find the largest component of BA45
+largest45 = members45{1};
+results45 = zeros(size(results));
+results45(largest45) = 1;
+
+% create edge list for BA44
+label44 = results;
+label44(label44==1) = 0;
+edgelist44 = [];
+for i = 1:length(label44)
+    nbrs = surf.nbr(:,i);
+    nbrslabel = label44(nbrs);
+    for j = 1:length(nbrs)
+        if label44(i)~=0 && label44(i) == nbrslabel(j)
+            edge = [i nbrs(j)];
+            edgelist44 = vertcat(edgelist44, edge);
+        else
+            edgelist44 = edgelist44;
+        end
     end
 end
-results44 = results2;
 
-% save results
-filename = ['/scr/murg2/MachineLearning/' subject '_results_BA44_constrained.1D'];
-fid = fopen(filename,'w');
-fprintf(fid, '%u\n', results44);
-fclose(fid);
+% build adjacency matrix from edge list for BA44
+A44 = sparse([edgelist44(:,1),edgelist44(:,2)],[edgelist44(:,2),edgelist44(:,1)],1);
 
-%Combine BA 45 and 44 labels
-results44(results44==1)=2;
-results = results44 + results45;
-results(results==3)=1.5;
-filename = ['/scr/murg2/MachineLearning/' subject '_results_overlap_constrained.1D'];
+% get network components for BA44
+[nComponents44,sizes44,members44] = networkComponents(A44);
+% find the largest component of BA44
+largest44 = members44{1};
+results44 = zeros(size(results));
+results44(largest44) = 2;
+
+%% combine results from BA 44 and 45 and save
+
+results = results45 + results44;
+
+filename = ['/scr/murg2/MachineLearning/newdata_results/' subject '_unpruned_constraint_clust.1D'];
 fid = fopen(filename,'w');
 fprintf(fid, '%u\n', results);
 fclose(fid);
