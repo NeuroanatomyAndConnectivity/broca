@@ -46,11 +46,17 @@ cost = test(tree, 'test', data_new, label);
 label = str2double(label);
 label = label';
 
-%% apply anatomical constraint according to distance from op and tri
+%% apply spatial constraint according to distance from op and tri
 
 optri = op + tri;
 distOpTri = surfGeoDist_parcellation(surf, optri);
 label(distOpTri>35)=0;
+%% apply spatial constraint using pars orbitalis as a hard cut-off
+
+orb = AnatLabelsData == 19;
+orb = orb';
+orb = double(orb);
+label(orb==1)=0;
 
 %% apply spatial constraint according to neighbors
 
