@@ -23,7 +23,7 @@ op = double(op);
 tri = double(tri);
 
 % get surface for new dataset
-%may need to convert surface from .asc, use freesurfer mris_convert L.midthickness.asc lh.midthickness
+% may need to convert surface from .asc, use freesurfer mris_convert L.midthickness.asc lh.midthickness
 surf = SurfStatReadSurf1(['/scr/murg2/HCP500_glyphsets/' subject '/lh.midthickness']);
 surf = surfGetNeighbors(surf);
 
@@ -38,45 +38,105 @@ mask = mask';
 mask(isnan(mask))=0;
 sel_feat = find(mask);
 data_new = [distOp; distTri; M(sel_feat,:)];
+
+% import manual probability maps and binarize them
+prob44 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_labels/44_mean_101.1D']);
+prob45 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_labels/45_mean_101.1D']);
+prob44(prob44>0)=1;
+prob45(prob45>0)=1;
+% add freesurfer labels
+broca = prob44' + prob45' + op + tri;
+
+% mask the input data so only broca gets classified
+data_new = data_new(:,find(broca));
 data_new = data_new';
 
-label = eval(tree, data_new);
+% run classification
+[label, nodes] = eval(tree, data_new);
 cost = test(tree, 'test', data_new, label);
-
 label = str2double(label);
 label = label';
 
-%% apply spatial constraint according to distance from op and tri
+% make results same size as surface and then save
+results = zeros([length(broca) 1]);
+results(find(broca)) = label;
 
-optri = op + tri;
-distOpTri = surfGeoDist_parcellation(surf, optri);
-label(distOpTri>35)=0;
+filename = ['/scr/murg2/MachineLearning/newdata_results/' subject '_unpruned_masked.1D'];
+fid = fopen(filename,'w');
+fprintf(fid, '%u\n', results);
+fclose(fid);
+
+% make probability maps for each area and then save
+probmap44 = zeros(size(label));
+probmap45 = zeros(size(label));
+probmapNeither = zeros(size(label));
+
+prob_class = classprob(tree);
+for i = 1:length(label)
+        nodenum = nodes(i);
+        probmap45(i)=prob_class(nodenum,2);
+        probmap44(i)=prob_class(nodenum,3);
+        probmapNeither(i)=prob_class(nodenum,1);
+end
+
+BA44prob = zeros([length(broca) 1]);
+BA44prob(find(broca)) = probmap44;
+
+filename = ['/scr/murg2/MachineLearning/newdata_results/' subject '_class_probmap44.1D'];
+fid = fopen(filename,'w');
+fprintf(fid, '%u\n', BA44prob);
+fclose(fid);
+
+BA45prob = zeros([length(broca) 1]);
+BA45prob(find(broca)) = probmap45;
+
+filename = ['/scr/murg2/MachineLearning/newdata_results/' subject '_class_probmap45.1D'];
+fid = fopen(filename,'w');
+fprintf(fid, '%u\n', BA45prob);
+fclose(fid);
+
+Neitherprob = zeros([length(broca) 1]);
+Neitherprob(find(broca)) = probmapNeither;
+
+filename = ['/scr/murg2/MachineLearning/newdata_results/' subject '_class_probmapNeither.1D'];
+fid = fopen(filename,'w');
+fprintf(fid, '%u\n', Neitherprob);
+fclose(fid);
+
+% %% apply spatial constraint according to distance from op and tri
+% 
+% optri = op + tri;
+% distOpTri = surfGeoDist_parcellation(surf, optri);
+% label(distOpTri>35)=0;
+
+%% apply spatial constraint according to probability of neighbors
+
+results = results';
+surf.nbr(surf.nbr==0)=1;
+for i = 1:length(surf.nbr)
+    nbrs = surf.nbr(:,i);
+    nbrs44 = BA44prob(nbrs);
+    nbrs45 = BA45prob(nbrs);
+    nbrsNeither = Neitherprob(nbrs);
+    sum44 = nansum(nbrs44);
+    sum45 = nansum(nbrs45);
+    sumNeither = nansum(nbrsNeither);
+    sum = [sumNeither; sum45; sum44];
+    [M,I] = max(sum);
+    results(:,i)=I-1;
+end
+
+filename = ['/scr/murg2/MachineLearning/newdata_results/' subject '_class_prob_nbrs.1D'];
+fid = fopen(filename,'w');
+fprintf(fid, '%u\n', results);
+fclose(fid);
+
 %% apply spatial constraint using pars orbitalis as a hard cut-off
 
 orb = AnatLabelsData == 19;
 orb = orb';
 orb = double(orb);
-label(orb==1)=0;
-
-%% apply spatial constraint according to neighbors
-
-surf.nbr(surf.nbr==0)=1;
-results = label;
-for i = 1:length(surf.nbr)
-    col = surf.nbr(:,i);
-    col2 = results(col);
-    sumcol0 = sum(col2(:) == 0);
-    sumcol1 = sum(col2(:) == 1);
-    sumcol2 = sum(col2(:) == 2);
-    if sumcol1>3
-    results(:,i)=1;
-    elseif sumcol2>3
-    results(:,i)=2;
-    end
-    if sumcol0>4
-    results(:,i)=0;
-    end
-end
+results(orb==1)=0;
 
 %% apply spatial constraint using cluster size
 
@@ -138,7 +198,7 @@ results44(largest44) = 2;
 
 results = results45 + results44;
 
-filename = ['/scr/murg2/MachineLearning/newdata_results/' subject '_unpruned_constraint_clust.1D'];
+filename = ['/scr/murg2/MachineLearning/newdata_results/' subject '_class_prob_nbrs_clust.1D'];
 fid = fopen(filename,'w');
 fprintf(fid, '%u\n', results);
 fclose(fid);
