@@ -5,7 +5,7 @@ subject = num2str(subject);
 %% Import data and run partial correlation for each area
 
 % get correlation matrix for individual subject
-fid = fopen(['/scr/murg2/HCP_Q3_glyphsets_left-only/' subject '/rfMRI_REST_left_corr_avg.gii.data'], 'r');
+fid = fopen(['/scr/murg1/HCP500_glyphsets/' subject '/rfMRI_REST_left_corr_avg.gii.data'], 'r');
 M = fread(fid,[32492 32492], 'float32');
 
 % get group connectivity maps
@@ -60,7 +60,7 @@ fclose(fid);
 
 %% vizualize results
 % may need to convert surface from .asc, use freesurfer mris_convert L.midthickness.asc lh.midthickness
-surf = SurfStatReadSurf1(['/scr/murg2/HCP_Q3_glyphsets_left-only/' subject '/lh.very_inflated']);
+surf = SurfStatReadSurf1(['/scr/murg1/HCP500_glyphsets/' subject '/lh.very_inflated']);
 figure('visible','off'); SurfStatView(results45,surf);
 saveas(gcf, ['/scr/murg2/MachineLearning/partialcorr/' subject '_partcorr45.png']); close all;
 figure('visible','off'); SurfStatView(results44,surf);
@@ -69,7 +69,7 @@ saveas(gcf, ['/scr/murg2/MachineLearning/partialcorr/' subject '_partcorr44.png'
 %% Apply spatial constraint using geodesic distance
 
 % calculate geodesic distances from freesurfer labels
-surf = SurfStatReadSurf1(['/scr/murg2/HCP_Q3_glyphsets_left-only/' subject '/lh.midthickness']);
+surf = SurfStatReadSurf1(['/scr/murg1/HCP500_glyphsets/' subject '/lh.midthickness']);
 surf = surfGetNeighbors(surf);
 distOp = surfGeoDist_parcellation(surf, op);
 distTri = surfGeoDist_parcellation(surf, tri);
@@ -112,7 +112,7 @@ maps = [norm45, norm44, neither];
 part(val==0) = 0;
 
 % save results
-surf = SurfStatReadSurf1(['/scr/murg2/HCP_Q3_glyphsets_left-only/' subject '/lh.very_inflated']);
+surf = SurfStatReadSurf1(['/scr/murg1/HCP500_glyphsets/' subject '/lh.very_inflated']);
 figure('visible','off'); SurfStatView(part,surf);
 saveas(gcf, ['/scr/murg2/MachineLearning/partialcorr/' subject '_partcorrResults.png']); close all;
 
@@ -121,3 +121,76 @@ filename = ['/scr/murg2/MachineLearning/partialcorr/' subject '_partcorrResults.
 fid = fopen(filename,'w');
 fprintf(fid, '%u\n', part);
 fclose(fid);
+
+
+%% apply spatial constraint using cluster size
+
+% get neighborhood information
+surf = SurfStatReadSurf1(['/scr/murg1/HCP500_glyphsets/' subject '/lh.very_inflated']);
+surf = surfGetNeighbors(surf);
+
+surf.nbr(surf.nbr==0)=1; %necessary for correct indexing
+
+% create edge list for BA45
+label45 = part';
+label45(label45==2) = 0;
+edgelist45 = [];
+for i = 1:length(label45)
+    nbrs = surf.nbr(:,i);
+    nbrslabel = label45(nbrs);
+    for j = 1:length(nbrs)
+        if label45(i)~=0 && label45(i) == nbrslabel(j)
+            edge = [i nbrs(j)];
+            edgelist45 = vertcat(edgelist45, edge);
+        else
+            edgelist45 = edgelist45;
+        end
+    end
+end
+
+% build adjacency matrix from edge list for BA45
+A45 = sparse([edgelist45(:,1),edgelist45(:,2)],[edgelist45(:,2),edgelist45(:,1)],1);
+
+% get network components for BA45
+[nComponents45,sizes45,members45] = networkComponents(A45);
+% find the largest component of BA45
+largest45 = members45{1};
+results45 = zeros(size(part));
+results45(largest45) = 1;
+
+% create edge list for BA44
+label44 = part;
+label44(label44==1) = 0;
+edgelist44 = [];
+for i = 1:length(label44)
+    nbrs = surf.nbr(:,i);
+    nbrslabel = label44(nbrs);
+    for j = 1:length(nbrs)
+        if label44(i)~=0 && label44(i) == nbrslabel(j)
+            edge = [i nbrs(j)];
+            edgelist44 = vertcat(edgelist44, edge);
+        else
+            edgelist44 = edgelist44;
+        end
+    end
+end
+
+% build adjacency matrix from edge list for BA44
+A44 = sparse([edgelist44(:,1),edgelist44(:,2)],[edgelist44(:,2),edgelist44(:,1)],1);
+
+% get network components for BA44
+[nComponents44,sizes44,members44] = networkComponents(A44);
+% find the largest component of BA44
+largest44 = members44{1};
+results44 = zeros(size(part));
+results44(largest44) = 2;
+
+% combine results from BA 44 and 45
+results = results45 + results44;
+filename = ['/scr/murg2/MachineLearning/partialcorr/' subject '_partcorrResults_maxclust.1D'];
+fid = fopen(filename,'w');
+fprintf(fid, '%u\n', results);
+fclose(fid);
+
+figure('visible','off'); SurfStatView(results,surf);
+saveas(gcf, ['/scr/murg2/MachineLearning/partialcorr/' subject '_partcorrResults_maxclust.png']); close all;
