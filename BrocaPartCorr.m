@@ -5,7 +5,7 @@ subject = num2str(subject);
 %% Import data and run partial correlation for each area
 
 % get correlation matrix for individual subject
-fid = fopen(['/scr/murg1/HCP500_glyphsets/' subject '/rfMRI_REST_left_corr_avg.gii.data'], 'r');
+fid = fopen(['/scr/murg2/HCP_Q3_glyphsets_left-only/' subject '/rfMRI_REST_left_corr_avg.gii.data'], 'r');
 M = fread(fid,[32492 32492], 'float32');
 
 % get group connectivity maps
@@ -37,11 +37,24 @@ broca = prob44' + prob45' + op + tri;
 M_small = M(:,find(broca));
 M_small(isnan(M_small))=0;
 
+% import ICA maps
+ica = load('/scr/murg2/MachineLearning/partialcorr/ICA/ica_output_20.mat');
+ica = ica.ic;
+surf = SurfStatReadSurf1(['/scr/murg2/HCP_new/HCP_Q1-Q6_GroupAvg_Related440_Unrelated100_v1/lh.inflated']);
+
+% remove components that look most like 45
+ica_rm45 = ica;
+ica_rm45(:,[12,9]) = [];
+
+% remove components that look most like 44
+ica_rm44 = ica;
+ica_rm44(:,[5,11]) = [];
+
 % run partial correlation for 45 vs 44
-partcorr45 = partialcorr(M_small, conn45, conn44);
+partcorr45 = partialcorr(M_small, conn45, ica_rm45);
 
 % run partial correlation for 44 vs 45
-partcorr44 = partialcorr(M_small, conn44, conn45);
+partcorr44 = partialcorr(M_small, conn44, ica_rm44);
 
 % make results wholebrain and save as 1D
 results45 = zeros(length(M),1);
@@ -60,7 +73,7 @@ fclose(fid);
 
 %% vizualize results
 % may need to convert surface from .asc, use freesurfer mris_convert L.midthickness.asc lh.midthickness
-surf = SurfStatReadSurf1(['/scr/murg1/HCP500_glyphsets/' subject '/lh.very_inflated']);
+surf = SurfStatReadSurf1(['/scr/murg2/HCP_Q3_glyphsets_left-only/' subject '/lh.very_inflated']);
 figure('visible','off'); SurfStatView(results45,surf);
 saveas(gcf, ['/scr/murg2/MachineLearning/partialcorr/' subject '_partcorr45.png']); close all;
 figure('visible','off'); SurfStatView(results44,surf);
@@ -69,7 +82,7 @@ saveas(gcf, ['/scr/murg2/MachineLearning/partialcorr/' subject '_partcorr44.png'
 %% Apply spatial constraint using geodesic distance
 
 % calculate geodesic distances from freesurfer labels
-surf = SurfStatReadSurf1(['/scr/murg1/HCP500_glyphsets/' subject '/lh.midthickness']);
+surf = SurfStatReadSurf1(['/scr/murg2/HCP_Q3_glyphsets_left-only/' subject '/lh.midthickness']);
 surf = surfGetNeighbors(surf);
 distOp = surfGeoDist_parcellation(surf, op);
 distTri = surfGeoDist_parcellation(surf, tri);
@@ -112,7 +125,7 @@ maps = [norm45, norm44, neither];
 part(val==0) = 0;
 
 % save results
-surf = SurfStatReadSurf1(['/scr/murg1/HCP500_glyphsets/' subject '/lh.very_inflated']);
+surf = SurfStatReadSurf1(['/scr/murg2/HCP_Q3_glyphsets_left-only/' subject '/lh.very_inflated']);
 figure('visible','off'); SurfStatView(part,surf);
 saveas(gcf, ['/scr/murg2/MachineLearning/partialcorr/' subject '_partcorrResults.png']); close all;
 
@@ -126,7 +139,7 @@ fclose(fid);
 %% apply spatial constraint using cluster size
 
 % get neighborhood information
-surf = SurfStatReadSurf1(['/scr/murg1/HCP500_glyphsets/' subject '/lh.very_inflated']);
+surf = SurfStatReadSurf1(['/scr/murg2/HCP_Q3_glyphsets_left-only/' subject '/lh.very_inflated']);
 surf = surfGetNeighbors(surf);
 
 surf.nbr(surf.nbr==0)=1; %necessary for correct indexing
