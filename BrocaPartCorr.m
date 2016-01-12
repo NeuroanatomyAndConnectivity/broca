@@ -1,11 +1,11 @@
-function[] = BrocaPartCorr(subject)
-
-subject = num2str(subject);
+% function[] = BrocaPartCorr(subject)
+% 
+% subject = num2str(subject);
 
 %% Import data and run partial correlation for each area
 
 % get correlation matrix for individual subject
-fid = fopen(['/scr/murg2/HCP_Q3_glyphsets_left-only/' subject '/rfMRI_REST_left_corr_avg.gii.data'], 'r');
+fid = fopen(['/scr/murg2/HCP_Q3_glyphsets_left-only/100307/rfMRI_REST_left_corr_avg.gii.data'], 'r');
 M = fread(fid,[32492 32492], 'float32');
 
 % get group connectivity maps
@@ -15,7 +15,7 @@ conn45 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_maps/m
 conn45(isnan(conn45))=0;
 
 % get pars opercularis and pars triangularis freesurfer labels for new dataset
-AnatLabels = gifti(['/afs/cbs.mpg.de/documents/connectome/_all/' subject '/MNINonLinear/fsaverage_LR32k/' subject '.L.aparc.32k_fs_LR.label.gii']);
+AnatLabels = gifti(['/afs/cbs.mpg.de/documents/connectome/_all/100307/MNINonLinear/fsaverage_LR32k/100307.L.aparc.32k_fs_LR.label.gii']);
 AnatLabelsData = AnatLabels.cdata;
 op = AnatLabelsData == 18;
 tri = AnatLabelsData == 20;
@@ -25,13 +25,14 @@ op = double(op);
 tri = double(tri);
 
 % import manual probability maps and binarize them
-prob44 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_labels/44_mean_101.1D']);
+manprob = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_labels/44_mean_101.1D']);
 prob45 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_labels/45_mean_101.1D']);
-prob44(prob44>0)=1;
+manprob(manprob>0)=1;
 prob45(prob45>0)=1;
 
 % add freesurfer labels to manual prob maps to create broca mask
-broca = prob44' + prob45' + op + tri;
+broca = manprob' + prob45' + op + tri;
+broca(broca>0)=1;
 
 % mask the correlation matrix to Broca
 M_small = M(:,find(broca));
@@ -44,102 +45,179 @@ surf = SurfStatReadSurf1(['/scr/murg2/HCP_new/HCP_Q1-Q6_GroupAvg_Related440_Unre
 
 % remove components that look most like 45
 ica_rm45 = ica;
-ica_rm45(:,[12,9]) = [];
+ica_rm45(:,[1, 12, 17, 19]) = [];
 
 % remove components that look most like 44
 ica_rm44 = ica;
-ica_rm44(:,[5,11]) = [];
+ica_rm44(:,[5, 9, 11, 15]) = [];
 
-% run partial correlation for 45 vs 44
+% run partial correlation for 45
 partcorr45 = partialcorr(M_small, conn45, ica_rm45);
 
-% run partial correlation for 44 vs 45
+% run partial correlation for 44
 partcorr44 = partialcorr(M_small, conn44, ica_rm44);
+
+%run partial correlation for remaining ICA components
+ica_rmboth = ica;
+ica_rmboth(:,[1, 5, 9, 11, 12, 15, 17, 19]) = [];
+partcorrIC = [];
+for i=1:size(ica_rmboth,2)
+    rm = ica_rmboth;
+    rm(:,i) = [];
+    rm = horzcat(conn45, conn44, rm);
+    partcorr = partialcorr(M_small, ica_rmboth(:,i), rm);
+    results = zeros(length(M),1);
+    results(find(broca)) = partcorr;
+    partcorrIC = horzcat(partcorrIC, results);
+end
 
 % make results wholebrain and save as 1D
 results45 = zeros(length(M),1);
 results45(find(broca)) = partcorr45;
-filename = ['/scr/murg2/MachineLearning/partialcorr/' subject '_partcorr45.1D'];
+filename = ['/scr/murg2/MachineLearning/partialcorr/100307_partcorr45.1D'];
 fid = fopen(filename,'w');
 fprintf(fid, '%u\n', results45);
 fclose(fid);
 
 results44 = zeros(length(M),1);
 results44(find(broca)) = partcorr44;
-filename = ['/scr/murg2/MachineLearning/partialcorr/' subject '_partcorr44.1D'];
+filename = ['/scr/murg2/MachineLearning/partialcorr/100307_partcorr44.1D'];
 fid = fopen(filename,'w');
 fprintf(fid, '%u\n', results44);
 fclose(fid);
 
-%% vizualize results
-% may need to convert surface from .asc, use freesurfer mris_convert L.midthickness.asc lh.midthickness
-surf = SurfStatReadSurf1(['/scr/murg2/HCP_Q3_glyphsets_left-only/' subject '/lh.very_inflated']);
-figure('visible','off'); SurfStatView(results45,surf);
-saveas(gcf, ['/scr/murg2/MachineLearning/partialcorr/' subject '_partcorr45.png']); close all;
-figure('visible','off'); SurfStatView(results44,surf);
-saveas(gcf, ['/scr/murg2/MachineLearning/partialcorr/' subject '_partcorr44.png']); close all;
+%% apply spatial contraint using geodesic distance calculated from...
 
-%% Apply spatial constraint using geodesic distance
+% % % freesurfer labels
+% % surf = SurfStatReadSurf1(['/scr/murg2/HCP_Q3_glyphsets_left-only/100307/lh.midthickness']);
+% % surf = surfGetNeighbors(surf);
+% % distOp = surfGeoDist_parcellation(surf, op);
+% % distTri = surfGeoDist_parcellation(surf, tri);
+% % invOp = distOp*-1;
+% % invmin = min(invOp);
+% % invmax = max(invOp);
+% % invrange = invmax - invmin;
+% % normdistOp = (invOp - invmin) / invrange;
+% % invTri = distTri*-1;
+% % invmin = min(invTri);
+% % invmax = max(invTri);
+% % invrange = invmax - invmin;
+% % normdistTri = (invTri - invmin) / invrange;
+% % new45 = results45.*normdistTri';
+% % new44 = results44.*normdistOp';
+% 
+% % OR either max of partial correlation maps or max of manual probability maps
+% % max44 = results44;
+% max44 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_labels/44_mean_101.1D']);
+% % max45 = results45;
+% max45 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_labels/45_mean_101.1D']);
+% max44(max44<(max(max44)))=0;
+% max44(max44>0)=1;
+% max45(max45<(max(max45)))=0;
+% max45(max45>0)=1;
+% 
+% surf = SurfStatReadSurf1(['/scr/murg2/HCP_Q3_glyphsets_left-only/100307/lh.midthickness']);
+% surf = surfGetNeighbors(surf);
+% distmax44 = surfGeoDist_parcellation(surf, max44');
+% distmax45 = surfGeoDist_parcellation(surf, max45');
+% 
+% % mask, invert, and then normalize geodist maps
+% inv44 = distmax44.*broca;
+% inv44 = inv44*-1;
+% normdist44 = (inv44 - min(inv44)) / (max(inv44) - min(inv44));
+% % normdist44 = normdist44*10;
+% 
+% inv45 = distmax45.*broca;
+% inv45 = inv45*-1;
+% normdist45 = (inv45 - min(inv45)) / (max(inv45) - min(inv45));
+% % normdist45 = normdist45*10;
+% 
+% % multiply partial correlation results by inverse distance maps
+% new45 = results45.*normdist45';
+% new44 = results44.*normdist44';
 
-% calculate geodesic distances from freesurfer labels
-surf = SurfStatReadSurf1(['/scr/murg2/HCP_Q3_glyphsets_left-only/' subject '/lh.midthickness']);
+% OR use geodist from thresholded broca prob map 
+manprob = importdata(['/scr/murg2/MachineLearning/partialcorr/GroupProbBroca.1D']);
+manprob(manprob>=0.5)=1;
+manprob(manprob<1)=0;
+surf = SurfStatReadSurf1(['/scr/murg2/HCP_Q3_glyphsets_left-only/100307/lh.midthickness']);
 surf = surfGetNeighbors(surf);
-distOp = surfGeoDist_parcellation(surf, op);
-distTri = surfGeoDist_parcellation(surf, tri);
+distbroca = surfGeoDist_parcellation(surf, manprob');
+% mask, invert, and then normalize geodist maps
+invdist = distbroca.*broca;
+invdist = invdist*-1;
+normdist = (invdist - min(invdist)) / (max(invdist) - min(invdist));
 
-%invert and then normalize geodist maps
-invOp = distOp*-1;
-invmin = min(invOp);
-invmax = max(invOp);
-invrange = invmax - invmin;
-normdistOp = (invOp - invmin) / invrange;
+new45 = results45.*normdist;
+new44 = results44.*normdist;
 
-invTri = distTri*-1;
-invmin = min(invTri);
-invmax = max(invTri);
-invrange = invmax - invmin;
-normdistTri = (invTri - invmin) / invrange;
+%% apply spatial constraint by weighting partial correlation results by manual probability maps within vlpfc
 
-% multiply partial correlation results by inverse distance maps
-new45 = results45.*normdistTri';
-new44 = results44.*normdistOp';
+% prob44 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_labels/44_mean_101.1D']);
+% prob45 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_labels/45_mean_101.1D']);
+% 
+% min44 = min(prob44(prob44>0));
+% prob44 = prob44(find(broca));
+% prob44(prob44==0)=min44; % set zeros within broca to minimum nonzero value
+% new44 = zeros(length(M),1);
+% new44(find(broca)) = prob44;
+% normprob44 = (new44 - min(new44)) / (max(new44) - min(new44));
+% normprob44 = normprob44*10;
+% 
+% min45 = min(prob45(prob45>0));
+% prob45 = prob45(find(broca));
+% prob45(prob45==0)=min45; % set zeros within broca to minimum nonzero value
+% new45 = zeros(length(M),1);
+% new45(find(broca)) = prob45;
+% normprob45 = (new45 - min(new45)) / (max(new45) - min(new45));
+% normprob45 = normprob45*10;
+% 
+% new45 = results45.*normprob45;
+% new44 = results44.*normprob44;
 
-% normalize partcorr maps
-min45 = min(new45);
-max45 = max(new45);
-range45 = max45 - min45;
-norm45 = (new45 - min45) / range45;
-min44 = min(new44);
-max44 = max(new44);
-range44 = max44 - min44;
-norm44 = (new44 - min44) / range44;
+% % OR use prob map of both areas together to avoid gaps in transition zone
+% manprob = importdata(['/scr/murg2/MachineLearning/partialcorr/GroupProbBroca.1D']);
+% minprob = min(manprob(manprob>0));
+% manprob = manprob(find(broca));
+% manprob(manprob==0)=minprob; % set zeros within broca to minimum nonzero value
+% newprob = zeros(length(M),1);
+% newprob(find(broca)) = manprob;
+% normnewprob = (newprob - min(newprob)) / (max(newprob) - min(newprob));
+% normnewprob = normnewprob*10;
+% 
+% new45 = results45.*normnewprob;
+% new44 = results44.*normnewprob;
 
-% % create "neither" map by adding 44 and 45 correlations and inverting
-% neither = (new45 + new44)*-1;
-% or import neither prob map
-neither = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_labels/neitherWholebrain_mean.1D']);
+%% combine all partial correlation maps and apply winner-take-all
+
+maps = [new45, new44, partcorrIC];
+% maps = [results45, results44, partcorrIC];
+% % normalize across nodes for each column
+% maps_norm = zeros(size(maps));
+% for i = 1:size(maps,2)
+%     col = maps(:,i);
+%     maps_norm(:,i) = (col - min(col)) / (max(col) - min(col));
+% end
+maps_norm = normc(maps); % normc preserves relative magnitude of columns by normalizing to a length of 1 instead of 0-1
+% maps_norm=maps;
 
 % apply winner-take-all to create binary partition from the partial correlation maps
-maps = [norm45, norm44, neither];
-[val,part] = max(maps,[],2); %return the maximum from each row (returns 1 if values are the same)
+[val,part] = max(maps_norm,[],2); %return the maximum from each row (returns 1 if values are the same)
 part(val==0) = 0;
 
-% save results
-surf = SurfStatReadSurf1(['/scr/murg2/HCP_Q3_glyphsets_left-only/' subject '/lh.very_inflated']);
-figure('visible','off'); SurfStatView(part,surf);
-saveas(gcf, ['/scr/murg2/MachineLearning/partialcorr/' subject '_partcorrResults.png']); close all;
-
-part(part==3) = 0;
-filename = ['/scr/murg2/MachineLearning/partialcorr/' subject '_partcorrResults.1D'];
+% save winner-take-all partition
+filename = ['/scr/murg2/MachineLearning/partialcorr/100307_partcorrAll.1D'];
 fid = fopen(filename,'w');
 fprintf(fid, '%u\n', part);
 fclose(fid);
 
+% keep only labels for BA44 and 45
+part(part>2) = 0;
 
-%% apply spatial constraint using cluster size
+%% apply spatial constraint using cluster size (keep only largest clusters)
 
 % get neighborhood information
-surf = SurfStatReadSurf1(['/scr/murg2/HCP_Q3_glyphsets_left-only/' subject '/lh.very_inflated']);
+surf = SurfStatReadSurf1(['/scr/murg2/HCP_Q3_glyphsets_left-only/100307/lh.very_inflated']);
 surf = surfGetNeighbors(surf);
 
 surf.nbr(surf.nbr==0)=1; %necessary for correct indexing
@@ -200,10 +278,10 @@ results44(largest44) = 2;
 
 % combine results from BA 44 and 45
 results = results45 + results44;
-filename = ['/scr/murg2/MachineLearning/partialcorr/' subject '_partcorrResults_maxclust.1D'];
+filename = ['/scr/murg2/MachineLearning/partialcorr/100307_partcorrResults_maxclust.1D'];
 fid = fopen(filename,'w');
 fprintf(fid, '%u\n', results);
 fclose(fid);
 
 figure('visible','off'); SurfStatView(results,surf);
-saveas(gcf, ['/scr/murg2/MachineLearning/partialcorr/' subject '_partcorrResults_maxclust.png']); close all;
+saveas(gcf, ['/scr/murg2/MachineLearning/partialcorr/100307_partcorrResults_maxclust.png']); close all;
