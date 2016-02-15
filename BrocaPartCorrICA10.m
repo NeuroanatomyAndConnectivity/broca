@@ -43,18 +43,33 @@ ica = load('/scr/murg2/MachineLearning/partialcorr/ICA/ica_output.mat');
 ica = ica.ic;
 surf = SurfStatReadSurf1(['/scr/murg2/HCP_new/HCP_Q1-Q6_GroupAvg_Related440_Unrelated100_v1/lh.inflated']);
 
-% remove components that look most like 45
-ica_rm45 = ica;
-ica_rm45(:,[3, 4, 10]) = [];
+% run spatial correlation between group connectivity maps and ICA components
+corr44 = [];
+corr45 = [];
+for i=1:size(ica,2)
+    corr = corr2(groupconn44, ica(:,i));
+    corr44 = horzcat(corr44, corr);
+    corr = corr2(groupconn45, ica(:,i));
+    corr45 = horzcat(corr45, corr);
+end
 
-% remove components that look most like 44
-ica_rm44 = ica;
-ica_rm44(:,[5, 8]) = [];
+% % remove the two components most highly correlated with each group connectivity map
+% [corr45sort, sort45] = sort(corr45, 'descend');
+% [corr44sort, sort44] = sort(corr44, 'descend');
+% rm = [sort45(:,1), sort45(:,2), sort44(:,1), sort44(:,2)];
 
-% run partial correlation for 45
+% OR remove components with correlations over a certain value
+rm = [find(corr45>0.2), find(corr44>0.2)];
+
+ica_rm = ica;
+ica_rm(:,rm) = [];
+
+% also remove opposite group connectivity map
+ica_rm45 = horzcat(ica_rm, groupconn44);
+ica_rm44 = horzcat(ica_rm, groupconn45);
+
+% run partial correlations with group connectivity maps
 partcorr45 = partialcorr(M_small, groupconn45, ica_rm45);
-
-% run partial correlation for 44
 partcorr44 = partialcorr(M_small, groupconn44, ica_rm44);
 
 % find index of max nodes from partcorr maps i.e. nodes with most similar connectivity to group-level BA44 and 45 maps
@@ -64,18 +79,20 @@ partcorr44 = partialcorr(M_small, groupconn44, ica_rm44);
 % extract connectivity maps from max nodes, then use as new template maps and re-run partial correlation
 indivconn45 = M_small(:,max45);
 indivconn44 = M_small(:,max44);
+ica_rm45 = horzcat(ica_rm, indivconn44);
+ica_rm44 = horzcat(ica_rm, indivconn45);
 partcorr45 = partialcorr(M_small, indivconn45, ica_rm45);
 partcorr44 = partialcorr(M_small, indivconn44, ica_rm44);
+partcorr45(isnan(partcorr45))=0;
+partcorr44(isnan(partcorr44))=0;
 
-%run partial correlation for remaining ICA components
-ica_rmboth = ica;
-ica_rmboth(:,[3, 4, 5, 8, 10]) = [];
+%run partial correlations for remaining ICA components
 partcorrIC = [];
-for i=1:size(ica_rmboth,2)
-    rm = ica_rmboth;
+for i=1:size(ica_rm,2)
+    rm = ica_rm;
     rm(:,i) = [];
     rm = horzcat(groupconn45, groupconn44, rm);
-    partcorr = partialcorr(M_small, ica_rmboth(:,i), rm);
+    partcorr = partialcorr(M_small, ica_rm(:,i), rm);
     results = zeros(length(M),1);
     results(find(broca)) = partcorr;
     partcorrIC = horzcat(partcorrIC, results);
@@ -118,20 +135,19 @@ norm45(find(broca)) = prob45;
 new45 = results45.*norm45;
 new44 = results44.*norm44;
 
-% % OR use prob map of both areas together to avoid gaps in transition zone
+% % multiply ICA component partial correlation maps by inverse of prob map of both areas to avoid gaps in transition zone
 % manprob = importdata(['/scr/murg2/MachineLearning/partialcorr/GroupProbBroca.1D']);
 % minprob = min(manprob(manprob>0));
 % manprob = manprob(find(broca));
 % manprob(manprob==0)=minprob; % set zeros within broca to minimum nonzero value
+% manprob = manprob*-1; % invert
 % manprob = (log10(manprob) - min(log10(manprob))) ./ (max(log10(manprob)) - min(log10(manprob))); % change slope of prob map for less dramatic change
 % newprob = zeros(length(M),1);
 % newprob(find(broca)) = manprob;
 % 
-% new45 = results45.*newprob;
-% new44 = results44.*newprob;
-
-% new45 = results45;
-% new44 = results44;
+% for i=1:size(partcorrIC,2)
+%     partcorrIC(:,i) = partcorrIC(:,i).*newprob;
+% end
 
 %% combine all partial correlation maps and apply winner-take-all
 
@@ -151,7 +167,7 @@ maps_norm = normc(maps); % normc preserves relative magnitude of columns by norm
 part(val==0) = 0;
 
 % save winner-take-all partition
-filename = ['/scr/murg2/MachineLearning/partialcorr/10comps_results/' subject '_partcorrAll_sep_indiv.1D'];
+filename = ['/scr/murg2/MachineLearning/partialcorr/10comps_results/' subject '_partcorrAll_rm0p2.1D'];
 fid = fopen(filename,'w');
 fprintf(fid, '%u\n', part);
 fclose(fid);
@@ -223,10 +239,10 @@ results44(largest44) = 2;
 
 % combine results from BA 44 and 45
 results = results45 + results44;
-filename = ['/scr/murg2/MachineLearning/partialcorr/10comps_results/' subject '_partcorrResults_maxclust_sep_indiv.1D'];
+filename = ['/scr/murg2/MachineLearning/partialcorr/10comps_results/' subject '_partcorrMaxclust_rm0p2.1D'];
 fid = fopen(filename,'w');
 fprintf(fid, '%u\n', results);
 fclose(fid);
 
 figure('visible','off'); SurfStatView(results,surf);
-saveas(gcf, ['/scr/murg2/MachineLearning/partialcorr/10comps_results/' subject '_partcorrResults_maxclust_sep_indiv.png']); close all;
+saveas(gcf, ['/scr/murg2/MachineLearning/partialcorr/10comps_results/' subject '_partcorrMaxclust_rm0p2.png']); close all;
