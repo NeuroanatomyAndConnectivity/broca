@@ -1,11 +1,13 @@
 function[] = BrocaPartCorrICA10(subject)
 
 subject = num2str(subject);
+subdir = ('/scr/murg1/HCP500_glyphsets/');
+outdir = ('/scr/murg2/MachineLearning/partialcorr/10comps_results/HCP500_rmtop2/');
 
 %% Import data and run partial correlation for each area
 
 % get correlation matrix for individual subject
-fid = fopen(['/scr/murg2/HCP_Q3_glyphsets_left-only/' subject '/rfMRI_REST_left_corr_avg.gii.data'], 'r');
+fid = fopen([subdir subject '/rfMRI_REST_left_corr_avg.gii.data'], 'r');
 M = fread(fid,[32492 32492], 'float32');
 
 % get group connectivity maps
@@ -53,13 +55,13 @@ for i=1:size(ica,2)
     corr45 = horzcat(corr45, corr);
 end
 
-% % remove the two components most highly correlated with each group connectivity map
-% [corr45sort, sort45] = sort(corr45, 'descend');
-% [corr44sort, sort44] = sort(corr44, 'descend');
-% rm = [sort45(:,1), sort45(:,2), sort44(:,1), sort44(:,2)];
+% remove the two components most highly correlated with each group connectivity map
+[~, sort45] = sort(corr45, 'descend');
+[~, sort44] = sort(corr44, 'descend');
+rm = [sort45(:,1), sort45(:,2), sort44(:,1), sort44(:,2)];
 
-% OR remove components with correlations over a certain value
-rm = [find(corr45>0.2), find(corr44>0.2)];
+% % OR remove components with correlations over a certain value
+% rm = [find(corr45>0.2), find(corr44>0.2)];
 
 ica_rm = ica;
 ica_rm(:,rm) = [];
@@ -101,14 +103,14 @@ end
 % make results wholebrain and save as 1D
 results45 = zeros(length(M),1);
 results45(find(broca)) = partcorr45;
-% filename = ['/scr/murg2/MachineLearning/partialcorr/10comps_results/' subject '_partcorr45_indiv.1D'];
+% filename = [outdir subject '_partcorr45_indiv.1D'];
 % fid = fopen(filename,'w');
 % fprintf(fid, '%u\n', results45);
 % fclose(fid);
 
 results44 = zeros(length(M),1);
 results44(find(broca)) = partcorr44;
-% filename = ['/scr/murg2/MachineLearning/partialcorr/10comps_results/' subject '_partcorr44_indiv.1D'];
+% filename = [outdir subject '_partcorr44_indiv.1D'];
 % fid = fopen(filename,'w');
 % fprintf(fid, '%u\n', results44);
 % fclose(fid);
@@ -152,22 +154,14 @@ new44 = results44.*norm44;
 %% combine all partial correlation maps and apply winner-take-all
 
 maps = [new45, new44, partcorrIC];
-% maps = [results45, results44, partcorrIC];
-% % normalize across nodes for each column
-% maps_norm = zeros(size(maps));
-% for i = 1:size(maps,2)
-%     col = maps(:,i);
-%     maps_norm(:,i) = (col - min(col)) / (max(col) - min(col));
-% end
 maps_norm = normc(maps); % normc preserves relative magnitude of columns by normalizing to a length of 1 instead of 0-1
-% maps_norm=maps;
 
 % apply winner-take-all to create binary partition from the partial correlation maps
 [val,part] = max(maps_norm,[],2); %return the maximum from each row (returns 1 if values are the same)
 part(val==0) = 0;
 
 % save winner-take-all partition
-filename = ['/scr/murg2/MachineLearning/partialcorr/10comps_results/' subject '_partcorrAll_rm0p2.1D'];
+filename = [outdir subject '_partcorrAll_rmtop2.1D'];
 fid = fopen(filename,'w');
 fprintf(fid, '%u\n', part);
 fclose(fid);
@@ -178,7 +172,7 @@ part(part>2) = 0;
 %% apply spatial constraint using cluster size (keep only largest clusters)
 
 % get neighborhood information
-surf = SurfStatReadSurf1(['/scr/murg2/HCP_Q3_glyphsets_left-only/' subject '/lh.very_inflated']);
+surf = SurfStatReadSurf1([subdir subject '/lh.very_inflated']);
 surf = surfGetNeighbors(surf);
 
 surf.nbr(surf.nbr==0)=1; %necessary for correct indexing
@@ -204,7 +198,7 @@ end
 A45 = sparse([edgelist45(:,1),edgelist45(:,2)],[edgelist45(:,2),edgelist45(:,1)],1);
 
 % get network components for BA45
-[nComponents45,sizes45,members45] = networkComponents(A45);
+[~,~,members45] = networkComponents(A45);
 % find the largest component of BA45
 largest45 = members45{1};
 results45 = zeros(size(part));
@@ -231,7 +225,7 @@ end
 A44 = sparse([edgelist44(:,1),edgelist44(:,2)],[edgelist44(:,2),edgelist44(:,1)],1);
 
 % get network components for BA44
-[nComponents44,sizes44,members44] = networkComponents(A44);
+[~,~,members44] = networkComponents(A44);
 % find the largest component of BA44
 largest44 = members44{1};
 results44 = zeros(size(part));
@@ -239,10 +233,10 @@ results44(largest44) = 2;
 
 % combine results from BA 44 and 45
 results = results45 + results44;
-filename = ['/scr/murg2/MachineLearning/partialcorr/10comps_results/' subject '_partcorrMaxclust_rm0p2.1D'];
+filename = [outdir subject '_partcorrMaxclust_rmtop2.1D'];
 fid = fopen(filename,'w');
 fprintf(fid, '%u\n', results);
 fclose(fid);
 
 figure('visible','off'); SurfStatView(results,surf);
-saveas(gcf, ['/scr/murg2/MachineLearning/partialcorr/10comps_results/' subject '_partcorrMaxclust_rm0p2.png']); close all;
+saveas(gcf, [outdir subject '_partcorrMaxclust_rmtop2.png']); close all;
