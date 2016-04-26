@@ -1,7 +1,7 @@
 function[results] = BrocaPartCorrICA10_NKI(subject)
 
 subject = char(subject);
-subdir = ('/scr/murg2/MachineLearning/partialcorr/NKI/subjects/');
+subdir = ('/scr/murg2/NKI/subject/');
 outdir = ('/scr/murg2/MachineLearning/partialcorr/NKI/results/');
 
 %% Import data and run partial correlation for each area
@@ -46,8 +46,8 @@ M_small = M(:,find(broca));
 M_small(isnan(M_small))=0;
 
 % import ICA maps
-ica = load('/scr/murg2/MachineLearning/partialcorr/NKI/ICA10_fsa5/ICA10_fsa5.mat');
-ica = ica.ICA10_fsa5;
+% ica = load('/scr/murg2/MachineLearning/partialcorr/NKI/ICA10_fsa5/ICA10_fsa5.mat');
+% ica = ica.ICA10_fsa5;
 
 ica = load('/scr/murg2/MachineLearning/partialcorr/NKI/ICA10_NKI.mat');
 ica = ica.A_ts;
