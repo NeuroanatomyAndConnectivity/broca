@@ -1,9 +1,9 @@
-% subject_list = importdata(['/scr/murg2/MachineLearning/EightNewSubjects.txt']);
-% subject_list = importdata(['/scr/murg1/HCP500_glyphsets/subject_list_HCP500.txt']);
-
 %% get subject list
 
 subject_list = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/subject_list_101.txt']);
+
+% subject_list = importdata(['/scr/murg2/MachineLearning/EightNewSubjects.txt']);
+% subject_list = importdata(['/scr/murg1/HCP500_glyphsets/subject_list_HCP500.txt']);
 
 %% run Broca parcellation
 
@@ -34,9 +34,11 @@ end
 
 prob45 = zeros(32492, 1);
 prob44 = zeros(32492, 1);
+rm = [];
 
 for i=1:length(subject_list)
-    data = importdata(['/scr/murg2/MachineLearning/partialcorr/20comps_results/HCP_ICA_Indiv/' char(subject_list(i)) '_ICA_indiv_SW_rm_abs0p4.1D']);
+    try
+    data = importdata(['/scr/murg2/MachineLearning/partialcorr/20comps_results/HCP_ICA_Indiv/' num2str(subject_list(i)) '_ICA_indiv_SW_rm_abs0p4.1D']);
     ba44 = data;
     ba44(ba44==1)=0;
     ba44(ba44==2)=1;
@@ -45,10 +47,16 @@ for i=1:length(subject_list)
     
     prob45 = prob45 + ba45;
     prob44 = prob44 + ba44;
-
+    catch
+        rm = horzcat(rm, i);
+        fprintf('Could not import subject # %u\n',i)
+        continue
+    end
     fprintf('Subject # %u\n',subject_list(i))
 
 end
+
+subject_list(rm, :) = [];
 
 prob44 = prob44./length(subject_list);
 prob45 = prob45./length(subject_list);
