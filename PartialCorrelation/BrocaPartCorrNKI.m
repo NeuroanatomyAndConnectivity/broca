@@ -1,36 +1,37 @@
-function[] = BrocaPartCorr(subject, corrthresh, fileext)
+function[] = BrocaPartCorrNKI(subject, corrthresh, fileext)
 
-subject = num2str(subject);
-subdir = ('/scr/murg2/HCP_Q3_glyphsets_left-only/');
-% subdir = ('/scr/murg1/HCP500_glyphsets/');
-outdir = ('/scr/murg2/MachineLearning/partialcorr/20comps_results/HCP_ICA_Indiv/');
-% outdir = ('/scr/murg2/MachineLearning/partialcorr/20comps_results/HCP_ICA_Indiv/HCP150_new/');
+subject = char(subject);
+subdir = ('/scr/murg2/NKI/');
+outdir = ('/scr/murg2/MachineLearning/partialcorr/20comps_results/NKI_ICA_indiv/');
 
 %% Import and mask data
 
 % get correlation matrix for individual subject
-fid = fopen([subdir subject '/rfMRI_REST_left_corr_avg.gii.data'], 'r');
-M = fread(fid,[32492 32492], 'float32');
+fid = fopen([subdir subject '/' subject '_lh_preprocessed_fsaverage5_fwhm6_corr.bin'], 'r');
+M = fread(fid,[10242 10242], 'float32');
 
 % get group connectivity maps
-groupconn44 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_maps/meanconn_nothresh_44.1D']);
+groupconn44 = gifti(['/scr/murg2/MachineLearning/partialcorr/NKI/BrocaGroupMaps_fsa5/groupconn44_fsa5.func.gii']);
+groupconn44 = groupconn44.cdata;
 groupconn44(isnan(groupconn44))=0;
-groupconn45 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_maps/meanconn_nothresh_45.1D']);
+groupconn45 = gifti(['/scr/murg2/MachineLearning/partialcorr/NKI/BrocaGroupMaps_fsa5/groupconn45_fsa5.func.gii']);
+groupconn45 = groupconn45.cdata;
 groupconn45(isnan(groupconn45))=0;
 
-% get pars opercularis and pars triangularis freesurfer labels for new dataset
-AnatLabels = gifti(['/afs/cbs.mpg.de/documents/connectome/_all/' subject '/MNINonLinear/fsaverage_LR32k/' subject '.L.aparc.32k_fs_LR.label.gii']);
-AnatLabelsData = AnatLabels.cdata;
-op = AnatLabelsData == 18;
-tri = AnatLabelsData == 20;
+% get pars opercularis and pars triangularis freesurfer labels
+[~, label, ~] = read_annotation('/scr/murg2/MachineLearning/partialcorr/NKI/lh.aparc.annot');
+op = label == 9221340;
+tri = label == 1326300;
 op = op';
 tri = tri';
 op = double(op);
 tri = double(tri);
 
 % import manual probability maps and binarize them
-prob44 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_labels/44_mean_101.1D']);
-prob45 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_labels/45_mean_101.1D']);
+prob44 = gifti(['/scr/murg2/MachineLearning/partialcorr/NKI/BrocaGroupMaps_fsa5/groupprob44_fsa5.func.gii']);
+prob44 = prob44.cdata;
+prob45 = gifti(['/scr/murg2/MachineLearning/partialcorr/NKI/BrocaGroupMaps_fsa5/groupprob45_fsa5.func.gii']);
+prob45 = prob45.cdata;
 prob44_bin = prob44;
 prob44_bin(prob44_bin>0)=1;
 prob45_bin = prob45;
@@ -47,9 +48,8 @@ M_small(isnan(M_small))=0;
 %% Group-level partial correlation
 
 % import group-level ICA maps
-ica = load('/scr/murg2/MachineLearning/partialcorr/ICA/ICA_HCP/ica_output_20.mat');
+ica = load('/scr/murg2/MachineLearning/partialcorr/ICA/ICA_NKI/ica_NKI_output_20.mat');
 ica = ica.ic;
-% surf = SurfStatReadSurf1(['/scr/murg2/HCP_new/HCP_Q1-Q6_GroupAvg_Related440_Unrelated100_v1/lh.inflated']);
 
 % run spatial correlation between group connectivity maps and ICA components
 corr44 = [];
@@ -95,7 +95,7 @@ indivconn44 = M_small(:,max44);
 %% Individual-level partial correlation
 
 % import individual-level ICA maps
-ica_indiv = load(['/scr/murg2/MachineLearning/partialcorr/ICA/ICA_HCP/ica_output_' subject '_20.mat']);
+ica_indiv = load(['/scr/murg2/MachineLearning/partialcorr/ICA/ICA_NKI/ica_output_' subject '_20.mat']);
 ica_indiv = ica_indiv.ic;
 
 % run spatial correlation between individual connectivity maps and individual ICA components
@@ -108,7 +108,7 @@ for i=1:size(ica_indiv,2)
     corr45_indiv = horzcat(corr45_indiv, corr);
 end
 
-% % remove components by correlation ranking
+% remove components by correlation ranking
 % [~, sort45] = sort(corr45_indiv, 'descend');
 % [~, sort44] = sort(corr44_indiv, 'descend');
 % rm = [sort45(:,1), sort45(:,2), sort44(:,1), sort44(:,2)];
@@ -200,7 +200,7 @@ fclose(fid);
 part(part>2) = 0;
 
 % get neighborhood information
-surf = SurfStatReadSurf1([subdir subject '/lh.very_inflated']);
+surf = SurfStatReadSurf1([subdir subject '/fsa5_lh.inflated']);
 surf = surfGetNeighbors(surf);
 
 surf.nbr(surf.nbr==0)=1; %necessary for correct indexing
