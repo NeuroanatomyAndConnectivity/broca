@@ -36,8 +36,8 @@ img = nib.Nifti1Image(mask, np.eye(4))
 img.to_filename('/scr/murg2/MachineLearning/partialcorr/ICA/ICA_NKI/mask.nii.gz')
 
 # run ICA on group level:
-n_components = 10
-n_jobs = 10 #number of CPUs used
+n_components = 20
+n_jobs = 20 #number of CPUs used
 canica = CanICA(mask='/scr/murg2/MachineLearning/partialcorr/ICA/ICA_NKI/mask.nii.gz',
                 n_components=n_components, smoothing_fwhm=0.,
                 threshold=None, verbose=10, random_state=0, n_jobs=n_jobs)
@@ -55,8 +55,8 @@ savemat('/scr/murg2/MachineLearning/partialcorr/ICA/ICA_NKI/ica_NKI_output_%s.ma
 ## RUN ICA ON INDIVIDUAL LEVEL:
 for sub in subs:
     try:
-        n_components = 10
-        n_jobs = 10 #number of CPUs used
+        n_components = 20
+        n_jobs = 20 #number of CPUs used
         canica = CanICA(mask='/scr/murg2/MachineLearning/partialcorr/ICA/ICA_NKI/mask.nii.gz',
                         n_components=n_components, smoothing_fwhm=0.,
                         threshold=None, verbose=10, random_state=0, n_jobs=n_jobs)
@@ -66,7 +66,7 @@ for sub in subs:
         # Retrieve the independent components in brain space
         components_img = canica.masker_.inverse_transform(canica.components_)
         
-        A = np.zeros((32492,n_components))
+        A = np.zeros((10242,n_components))
         # STILL NEED TO RESOLVE CORT INDICIES
         A[cort,:] = components_img.get_data().squeeze()
         #np.save('/scr/murg2/MachineLearning/partialcorr/ICA/ICA_NKI/ica_output_%s_%s.npy' % (sub, str(n_components)), A)
