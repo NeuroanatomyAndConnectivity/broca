@@ -92,6 +92,20 @@ partcorr44 = partialcorr(M_small, groupconn44, ica_rm44);
 indivconn45 = M_small(:,max45);
 indivconn44 = M_small(:,max44);
 
+% OR use the average of the top 5 percent as individual template
+% %find indices of the top 5 percent partial correlations
+% topthresh45 = prctile(partcorr45(:),95);
+% topnodes45 = find(partcorr45>topthresh45);
+% topthresh44 = prctile(partcorr44(:),95);
+% topnodes44 = find(partcorr44>topthresh44);
+% 
+% % extract connectivity maps from max nodes to use as new template maps
+% indivconn45 = M_small(:,topnodes45);
+% indivconn45 = mean(indivconn45,2);
+% indivconn44 = M_small(:,topnodes44);
+% indivconn44 = mean(indivconn44,2);
+
+
 %% Individual-level partial correlation
 
 % import individual-level ICA maps
