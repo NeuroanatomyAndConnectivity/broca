@@ -1,25 +1,57 @@
-function[] = BrocaPartCorr(subject, corrthresh, fileext)
+function[] = BrocaPartCorr(subjectID, varargin)
 
-subject = num2str(subject);
-subdir = ('/scr/murg2/HCP_Q3_glyphsets_left-only/');
-% subdir = ('/scr/murg1/HCP500_glyphsets/');
-outdir = ('/scr/murg2/MachineLearning/partialcorr/20comps_results/HCP_ICA_Indiv/');
-% outdir = ('/scr/murg2/MachineLearning/partialcorr/20comps_results/HCP_ICA_Indiv/HCP150_new/');
+% OPTIONS
+% 'rm_method' - method used to remove independent components. Can be:
+    % 1 - (default) remove IC components by correlation threshold
+        % 'corrthresh' - threshold used to remove components (default is r=0.4)
+    % 2 - remove IC components by rank ordering (removes two most highly correlated components for each area)
+% 'max_method' - method used to extract the individual connectivity templates from partial correlation results. Can be:
+    % 1 - (default) use the single maximum partial correlation nodes
+    % 2 - take the average of the top 5 percent maximum partial correlation nodes
+% EXAMPLE: BrocaPartCorr(100307, 'corrthresh', 0.1, 'max_method', 2)
+
+subjectID = num2str(subjectID);
+
+% parse optional variables
+i=1;
+while i <= length(varargin)
+  switch lower(varargin{i})
+    case 'rm_method'
+      rm_method = varargin{i+1}; i=i+2;
+    case 'corrthresh'
+      corrthresh = varargin{i+1}; i=i+2;
+    case 'max_method'
+       max_method = varargin{i+1}; i=i+2;
+    otherwise
+      error('Unknown option: %s\n',varargin{i}); i=i+1;
+  end
+end
+
+% define default values
+if ~exist('rm_method', 'var'), rm_method = 1; end
+if ~exist('corrthresh', 'var'), corrthresh = 0.4; end
+if ~exist('max_method', 'var'), max_method = 1; end
+
+% set directories
+subdir = ('/scr/murg2/HCP_Q3_glyphsets_left-only/'); % directory where subject's data is
+outdir = ('/scr/murg2/MachineLearning/partialcorr/test/'); % output directory
 
 %% Import and mask data
+disp('importing data...')
 
 % get correlation matrix for individual subject
-fid = fopen([subdir subject '/rfMRI_REST_left_corr_avg.gii.data'], 'r');
+fid = fopen([subdir subjectID '/rfMRI_REST_left_corr_avg.gii.data'], 'r');
 M = fread(fid,[32492 32492], 'float32');
 
 % get group connectivity maps
-groupconn44 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_maps/meanconn_nothresh_44.1D']);
+groupconn44 = importdata('/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_maps/meanconn_nothresh_44.1D');
 groupconn44(isnan(groupconn44))=0;
-groupconn45 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_maps/meanconn_nothresh_45.1D']);
+groupconn45 = importdata('/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_maps/meanconn_nothresh_45.1D');
 groupconn45(isnan(groupconn45))=0;
 
+disp('masking data...')
 % get pars opercularis and pars triangularis freesurfer labels for new dataset
-AnatLabels = gifti(['/afs/cbs.mpg.de/documents/connectome/_all/' subject '/MNINonLinear/fsaverage_LR32k/' subject '.L.aparc.32k_fs_LR.label.gii']);
+AnatLabels = gifti(['/afs/cbs.mpg.de/documents/connectome/_all/' subjectID '/MNINonLinear/fsaverage_LR32k/' subjectID '.L.aparc.32k_fs_LR.label.gii']);
 AnatLabelsData = AnatLabels.cdata;
 op = AnatLabelsData == 18;
 tri = AnatLabelsData == 20;
@@ -29,8 +61,8 @@ op = double(op);
 tri = double(tri);
 
 % import manual probability maps and binarize them
-prob44 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_labels/44_mean_101.1D']);
-prob45 = importdata(['/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_labels/45_mean_101.1D']);
+prob44 = importdata([subdir 'post-Montreal_labels/44_mean_101.1D']);
+prob45 = importdata([subdir 'post-Montreal_labels/45_mean_101.1D']);
 prob44_bin = prob44;
 prob44_bin(prob44_bin>0)=1;
 prob45_bin = prob45;
@@ -39,12 +71,14 @@ prob45_bin(prob45_bin>0)=1;
 % add freesurfer labels to manual prob maps to create broca mask
 broca = prob44_bin' + prob45_bin' + op + tri;
 broca(broca>0)=1;
+broca = logical(broca);
 
 % mask the correlation matrix to Broca
-M_small = M(:,find(broca));
+M_small = M(:,broca);
 M_small(isnan(M_small))=0;
 
 %% Group-level partial correlation
+disp('running partial correlations...')
 
 % import group-level ICA maps
 ica = load('/scr/murg2/MachineLearning/partialcorr/ICA/ICA_HCP/ica_output_20.mat');
@@ -52,24 +86,24 @@ ica = ica.ic;
 % surf = SurfStatReadSurf1(['/scr/murg2/HCP_new/HCP_Q1-Q6_GroupAvg_Related440_Unrelated100_v1/lh.inflated']);
 
 % run spatial correlation between group connectivity maps and ICA components
-corr44 = [];
-corr45 = [];
+corr44 = zeros(0,size(ica,2));
+corr45 = zeros(0,size(ica,2));
 for i=1:size(ica,2)
     corr = corr2(groupconn44, ica(:,i));
-    corr44 = horzcat(corr44, corr);
+    corr44(1,i) = corr;
     corr = corr2(groupconn45, ica(:,i));
-    corr45 = horzcat(corr45, corr);
+    corr45(1,i) = corr;
 end
 
-% remove components by correlation ranking
-% [~, sort45] = sort(corr45, 'descend');
-% [~, sort44] = sort(corr44, 'descend');
-% rm = [sort45(:,1), sort45(:,2), sort44(:,1), sort44(:,2)];
 
-% % OR remove components by threshold
-rm = [find(corr45>corrthresh), find(corr44>corrthresh)];
-% taking absolute value of r
-% rm = [find(abs(corr45)>corrthresh), find(abs(corr44)>corrthresh)];
+if rm_method == 1 % remove components by correlation threshold
+    rm = [find(corr45>corrthresh), find(corr44>corrthresh)];
+    % rm = [find(abs(corr45)>corrthresh), find(abs(corr44)>corrthresh)];  % alternatively, take absolute value of r
+elseif rm_method == 2 % OR remove components by correlation ranking
+    [~, sort45] = sort(corr45, 'descend');
+    [~, sort44] = sort(corr44, 'descend');
+    rm = [sort45(:,1), sort45(:,2), sort44(:,1), sort44(:,2)];
+end
 
 ica_rm = ica;
 ica_rm(:,rm) = [];
@@ -83,54 +117,49 @@ partcorr45 = partialcorr(M_small, groupconn45, ica_rm45);
 partcorr44 = partialcorr(M_small, groupconn44, ica_rm44);
 
 %% Extract individual-level connectivity templates
+disp('extracting individual template maps...')
 
-% find index of max nodes from partcorr maps i.e. nodes with most similar connectivity to group-level BA44 and 45 maps
-[~,max45] = max(partcorr45);
-[~,max44] = max(partcorr44);
-
-% extract connectivity maps from max nodes to use as new template maps
-indivconn45 = M_small(:,max45);
-indivconn44 = M_small(:,max44);
-
-% OR use the average of the top 5 percent as individual template
-% %find indices of the top 5 percent partial correlations
-% topthresh45 = prctile(partcorr45(:),95);
-% topnodes45 = find(partcorr45>topthresh45);
-% topthresh44 = prctile(partcorr44(:),95);
-% topnodes44 = find(partcorr44>topthresh44);
-% 
-% % extract connectivity maps from max nodes to use as new template maps
-% indivconn45 = M_small(:,topnodes45);
-% indivconn45 = mean(indivconn45,2);
-% indivconn44 = M_small(:,topnodes44);
-% indivconn44 = mean(indivconn44,2);
-
+if max_method == 1 % extract the nodes with the maximum partial correlations to use as individual template maps
+    [~,max45] = max(partcorr45);
+    [~,max44] = max(partcorr44);
+    indivconn45 = M_small(:,max45);
+    indivconn44 = M_small(:,max44);
+elseif max_method == 2 % OR average across the top 5 percent nodes
+    topthresh45 = prctile(partcorr45(:),95);
+    topnodes45 = partcorr45>topthresh45;
+    topthresh44 = prctile(partcorr44(:),95);
+    topnodes44 = partcorr44>topthresh44;
+    indivconn45 = M_small(:,topnodes45);
+    indivconn45 = mean(indivconn45,2);
+    indivconn44 = M_small(:,topnodes44);
+    indivconn44 = mean(indivconn44,2);
+end
 
 %% Individual-level partial correlation
+disp('re-running partial correlations with individual template maps...')
 
 % import individual-level ICA maps
-ica_indiv = load(['/scr/murg2/MachineLearning/partialcorr/ICA/ICA_HCP/ica_output_' subject '_20.mat']);
+ica_indiv = load(['/scr/murg2/MachineLearning/partialcorr/ICA/ICA_HCP/ica_output_' subjectID '_20.mat']);
 ica_indiv = ica_indiv.ic;
 
 % run spatial correlation between individual connectivity maps and individual ICA components
-corr44_indiv = [];
-corr45_indiv = [];
+corr44_indiv = zeros(0,size(ica_indiv,2));
+corr45_indiv = zeros(0,size(ica_indiv,2));
 for i=1:size(ica_indiv,2)
     corr = corr2(indivconn44, ica_indiv(:,i));
-    corr44_indiv = horzcat(corr44_indiv, corr);
+    corr44_indiv(1,i) = corr;
     corr = corr2(indivconn45, ica_indiv(:,i));
-    corr45_indiv = horzcat(corr45_indiv, corr);
+    corr45_indiv(1,i) = corr;
 end
 
-% % remove components by correlation ranking
-% [~, sort45] = sort(corr45_indiv, 'descend');
-% [~, sort44] = sort(corr44_indiv, 'descend');
-% rm = [sort45(:,1), sort45(:,2), sort44(:,1), sort44(:,2)];
-
-% % OR remove components by threshold
-rm = [find(corr45_indiv>corrthresh), find(corr44_indiv>corrthresh)];
-% taking absolute value of r
-% rm = [find(abs(corr45_indiv)>corrthresh), find(abs(corr44_indiv)>corrthresh)];
+if rm_method == 1 % remove components by correlation threshold
+    rm = [find(corr45_indiv>corrthresh), find(corr44_indiv>corrthresh)];
+    % rm = [find(abs(corr45)>corrthresh), find(abs(corr44)>corrthresh)];  % alternatively, take absolute value of r
+elseif rm_method == 2 % OR remove components by correlation ranking
+    [~, sort45] = sort(corr45_indiv, 'descend');
+    [~, sort44] = sort(corr44_indiv, 'descend');
+    rm = [sort45(:,1), sort45(:,2), sort44(:,1), sort44(:,2)];
+end
 
 ica_rm_indiv = ica_indiv;
 ica_rm_indiv(:,rm) = [];
@@ -146,54 +175,47 @@ partcorr45(isnan(partcorr45))=0;
 partcorr44(isnan(partcorr44))=0;
 
 %run partial correlations for remaining ICA components
-partcorrIC = [];
+partcorrIC = zeros(size(M,1), size(ica_rm_indiv,2));
 for i=1:size(ica_rm_indiv,2)
     rm = ica_rm_indiv;
     rm(:,i) = [];
     rm = horzcat(indivconn45, indivconn44, rm);
     partcorr = partialcorr(M_small, ica_rm_indiv(:,i), rm);
     results = zeros(length(M),1);
-    results(find(broca)) = partcorr;
-    partcorrIC = horzcat(partcorrIC, results);
+    results(broca) = partcorr;
+    partcorrIC(:,i) = results;
 end
 partcorrIC(isnan(partcorrIC))=0;
 
-% make results wholebrain and save as 1D
+% make results wholebrain
 results45 = zeros(length(M),1);
-results45(find(broca)) = partcorr45;
-% filename = [outdir subject '_partcorr45_indiv.1D'];
-% fid = fopen(filename,'w');
-% fprintf(fid, '%u\n', results45);
-% fclose(fid);
-
+results45(broca) = partcorr45;
 results44 = zeros(length(M),1);
-results44(find(broca)) = partcorr44;
-% filename = [outdir subject '_partcorr44_indiv.1D'];
-% fid = fopen(filename,'w');
-% fprintf(fid, '%u\n', results44);
-% fclose(fid);
+results44(broca) = partcorr44;
 
 %% Spatial weighting
+disp('applying spatial weighting...')
 
 % weight partial correlation results by manual probability maps within vlpfc
 min44 = min(prob44(prob44>0));
-prob44 = prob44(find(broca));
+prob44 = prob44(broca);
 prob44(prob44==0)=min44; % set zeros within broca to minimum nonzero value
 prob44 = (log10(prob44) - min(log10(prob44))) ./ (max(log10(prob44)) - min(log10(prob44)));
 norm44 = zeros(length(M),1);
-norm44(find(broca)) = prob44;
+norm44(broca) = prob44;
 
 min45 = min(prob45(prob45>0));
-prob45 = prob45(find(broca));
+prob45 = prob45(broca);
 prob45(prob45==0)=min45; % set zeros within broca to minimum nonzero value
 prob45 = (log10(prob45) - min(log10(prob45))) ./ (max(log10(prob45)) - min(log10(prob45)));
 norm45 = zeros(length(M),1);
-norm45(find(broca)) = prob45;
+norm45(broca) = prob45;
 
 new45 = results45.*norm45;
 new44 = results44.*norm44;
 
 %% Winner-take-all partition
+disp('applying winner-take-all partition...')
 
 %combine all partial correlation maps
 maps = [new45, new44, partcorrIC];
@@ -203,18 +225,19 @@ maps = [new45, new44, partcorrIC];
 part(val==0) = 0;
 
 % save winner-take-all partition
-filename = [outdir subject '_ICA_indiv_WTA_SW_' fileext '.1D'];
-fid = fopen(filename,'w');
+filename = sprintf('%s%s_BrocaPart_WTA.',outdir, subjectID);
+fid = fopen([filename '1D'],'w');
 fprintf(fid, '%u\n', part);
 fclose(fid);
 
 %% Extract largest clusters labeled as 44 and 45
+disp('extracting largest clusters...')
 
 % keep only labels for BA44 and 45
 part(part>2) = 0;
 
 % get neighborhood information
-surf = SurfStatReadSurf1([subdir subject '/lh.very_inflated']);
+surf = SurfStatReadSurf1([subdir subjectID '/lh.very_inflated']);
 surf = surfGetNeighbors(surf);
 
 surf.nbr(surf.nbr==0)=1; %necessary for correct indexing
@@ -274,14 +297,17 @@ results44 = zeros(size(part));
 results44(largest44) = 2;
 
 %% Save results
+disp('saving results...')
 
 % combine results from BA 44 and 45
 results = results45 + results44;
-filename = [outdir subject '_ICA_indiv_SW_' fileext '.1D'];
-fid = fopen(filename,'w');
+filename = sprintf('%s%s_BrocaPart.',outdir, subjectID);
+fid = fopen([filename '1D'],'w');
 fprintf(fid, '%u\n', results);
 fclose(fid);
 
-figure('visible','off'); SurfStatView(results,surf);
-saveas(gcf, [outdir subject '_ICA_indiv_SW_' fileext '.png']); close all;
+figure('visible','off'); SurfStatViewDataLat(results,surf);
+saveas(gcf, [filename 'png']); close all;
+
+disp('done.')
 
