@@ -1,6 +1,26 @@
-function[] = BrocaPartCorr(subjectID, varargin)
+function[] = BrocaPartCorr(subjectID, datadir, outdir, varargin)
 
-% OPTIONS
+% Script to parcellate Broca's region into constituent areas 44 and 45 based on functional connetivity
+% As described in:
+%   Jakobsen, E., Liem, F., Klados, M., Bayrak, S., Petrides,
+%   M., Margulies, D.S. Automated individual-level parcellation of
+%   Broca's region based on functional connectivity. NeuroImage 2016
+%   (online published)
+
+% REQUIRED INPUTS
+% 'subjectID' - subject identifier (e.g. 100307 for HCP data)
+% 'datadir' - path to the directory where the input data are stored
+    % should include:
+        % individual subject directories named as subjectIDs containing:
+            % correlation matrix file - rfMRI_REST_left_corr_avg.gii.data
+            % anatomical freesurfer label file - <subjectID>.L.aparc.32k_fs_LR.label.gii
+            % individual-level ICA results - ica_output_<subjectID>_20.mat
+        % group connectivity maps - meanconn_nothresh_44.1D, meanconn_nothresh_45.1D
+        % group probability maps - 44_mean_101.1D, 45_mean_101.1D
+        % group-level ICA results - ica_output_20.mat
+% 'outdir' - path to the desired output directory
+
+% OPTIONAL ARGUMENTS
 % 'rm_method' - method used to remove independent components. Can be:
     % 1 - (default) remove IC components by correlation threshold
         % 'corrthresh' - threshold used to remove components (default is r=0.4)
@@ -8,7 +28,9 @@ function[] = BrocaPartCorr(subjectID, varargin)
 % 'max_method' - method used to extract the individual connectivity templates from partial correlation results. Can be:
     % 1 - (default) use the single maximum partial correlation nodes
     % 2 - take the average of the top 5 percent maximum partial correlation nodes
-% EXAMPLE: BrocaPartCorr(100307, 'corrthresh', 0.1, 'max_method', 2)
+
+% EXAMPLE
+% BrocaPartCorr(100307, '/scr/murg2/HCP_Q3_glyphsets_left-only/', '/scr/murg2/MachineLearning/partialcorr/test/', 'corrthresh', 0.1, 'max_method', 2)
 
 subjectID = num2str(subjectID);
 
@@ -32,26 +54,22 @@ if ~exist('rm_method', 'var'), rm_method = 1; end
 if ~exist('corrthresh', 'var'), corrthresh = 0.4; end
 if ~exist('max_method', 'var'), max_method = 1; end
 
-% set directories
-subdir = ('/scr/murg2/HCP_Q3_glyphsets_left-only/'); % directory where subject's data is
-outdir = ('/scr/murg2/MachineLearning/partialcorr/test/'); % output directory
-
 %% Import and mask data
 disp('importing data...')
 
 % get correlation matrix for individual subject
-fid = fopen([subdir subjectID '/rfMRI_REST_left_corr_avg.gii.data'], 'r');
+fid = fopen([datadir subjectID '/rfMRI_REST_left_corr_avg.gii.data'], 'r');
 M = fread(fid,[32492 32492], 'float32');
 
 % get group connectivity maps
-groupconn44 = importdata('/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_maps/meanconn_nothresh_44.1D');
+groupconn44 = importdata([datadir 'meanconn_nothresh_44.1D']);
 groupconn44(isnan(groupconn44))=0;
-groupconn45 = importdata('/scr/murg2/HCP_Q3_glyphsets_left-only/post-Montreal_maps/meanconn_nothresh_45.1D');
+groupconn45 = importdata([datadir 'meanconn_nothresh_45.1D']);
 groupconn45(isnan(groupconn45))=0;
 
 disp('masking data...')
 % get pars opercularis and pars triangularis freesurfer labels for new dataset
-AnatLabels = gifti(['/afs/cbs.mpg.de/documents/connectome/_all/' subjectID '/MNINonLinear/fsaverage_LR32k/' subjectID '.L.aparc.32k_fs_LR.label.gii']);
+AnatLabels = gifti([datadir subjectID '/' subjectID '.L.aparc.32k_fs_LR.label.gii']);
 AnatLabelsData = AnatLabels.cdata;
 op = AnatLabelsData == 18;
 tri = AnatLabelsData == 20;
@@ -61,8 +79,8 @@ op = double(op);
 tri = double(tri);
 
 % import manual probability maps and binarize them
-prob44 = importdata([subdir 'post-Montreal_labels/44_mean_101.1D']);
-prob45 = importdata([subdir 'post-Montreal_labels/45_mean_101.1D']);
+prob44 = importdata([datadir '44_mean_101.1D']);
+prob45 = importdata([datadir '45_mean_101.1D']);
 prob44_bin = prob44;
 prob44_bin(prob44_bin>0)=1;
 prob45_bin = prob45;
@@ -81,9 +99,8 @@ M_small(isnan(M_small))=0;
 disp('running partial correlations...')
 
 % import group-level ICA maps
-ica = load('/scr/murg2/MachineLearning/partialcorr/ICA/ICA_HCP/ica_output_20.mat');
+ica = load([datadir 'ica_output_20.mat']);
 ica = ica.ic;
-% surf = SurfStatReadSurf1(['/scr/murg2/HCP_new/HCP_Q1-Q6_GroupAvg_Related440_Unrelated100_v1/lh.inflated']);
 
 % run spatial correlation between group connectivity maps and ICA components
 corr44 = zeros(0,size(ica,2));
@@ -139,7 +156,7 @@ end
 disp('re-running partial correlations with individual template maps...')
 
 % import individual-level ICA maps
-ica_indiv = load(['/scr/murg2/MachineLearning/partialcorr/ICA/ICA_HCP/ica_output_' subjectID '_20.mat']);
+ica_indiv = load([datadir subjectID '/ica_output_' subjectID '_20.mat']);
 ica_indiv = ica_indiv.ic;
 
 % run spatial correlation between individual connectivity maps and individual ICA components
@@ -237,7 +254,7 @@ disp('extracting largest clusters...')
 part(part>2) = 0;
 
 % get neighborhood information
-surf = SurfStatReadSurf1([subdir subjectID '/lh.very_inflated']);
+surf = SurfStatReadSurf1([datadir subjectID '/lh.very_inflated']);
 surf = surfGetNeighbors(surf);
 
 surf.nbr(surf.nbr==0)=1; %necessary for correct indexing
